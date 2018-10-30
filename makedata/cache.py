@@ -1,19 +1,30 @@
+import hashlib
+import os
+import re
 import sys
 import time
-import re
-import os
-import urllib2
-import httplib
 import unittest
-import hashlib
 
-import StringIO
+try:
+    from http.client import HTTPMessage
+except ImportError:
+    from httplib import HTTPMessage
+
+try:
+    from StringIO import StringIO
+except ImportError:
+    from io import StringIO
+
+try:
+    from urllib.request import BaseHandler, build_opener
+except ImportError:
+    from urllib2 import BaseHandler, build_opener
 
 __version__ = (0,1)
 __author__ = "Staffan Malmgren <staffan@tomtebo.org>"
 
 
-class ThrottlingProcessor(urllib2.BaseHandler):
+class ThrottlingProcessor(BaseHandler):
     """Prevents overloading the remote web server by delaying requests.
 
     Causes subsequent requests to the same web server to be delayed
@@ -47,7 +58,7 @@ class ThrottlingProcessor(urllib2.BaseHandler):
             del(self.throttleTime)
         return response
 
-class CacheHandler(urllib2.BaseHandler):
+class CacheHandler(BaseHandler):
     """Stores responses in a persistant on-disk cache.
 
     If a subsequent GET request is made for the same URL, the stored
@@ -76,7 +87,7 @@ class CacheHandler(urllib2.BaseHandler):
         else:
             return response
 
-class CachedResponse(StringIO.StringIO):
+class CachedResponse(StringIO):
     """An urllib2.response-like object for cached responses.
 
     To determine wheter a response is cached or coming directly from
@@ -103,7 +114,7 @@ class CachedResponse(StringIO.StringIO):
         self.cacheLocation = cacheLocation
         hash = hashlib.md5(url).hexdigest()
         with open(self.cacheLocation + "/" + hash+".body") as in_file:
-            StringIO.StringIO.__init__(self, in_file.read())
+            StringIO.__init__(self, in_file.read())
         self.url     = url
         self.code    = 200
         self.msg     = "OK"
@@ -111,7 +122,7 @@ class CachedResponse(StringIO.StringIO):
             headerbuf = in_file.read()
         if setCacheHeader:
             headerbuf += "x-cache: %s/%s\r\n" % (self.cacheLocation,hash)
-        self.headers = httplib.HTTPMessage(StringIO.StringIO(headerbuf))
+        self.headers = HTTPMessage(StringIO(headerbuf))
 
     def info(self):
         return self.headers
@@ -129,21 +140,21 @@ class Tests(unittest.TestCase):
         t.lastRequestTime.clear()
 
     def testCache(self):
-        opener = urllib2.build_opener(CacheHandler(".urllib2cache"))
+        opener = build_opener(CacheHandler(".urllib2cache"))
         resp = opener.open("http://www.python.org/")
         self.assert_('x-cache' not in resp.info())
         resp = opener.open("http://www.python.org/")
         self.assert_('x-cache' in resp.info())
 
     def testThrottle(self):
-        opener = urllib2.build_opener(ThrottlingProcessor(5))
+        opener = build_opener(ThrottlingProcessor(5))
         resp = opener.open("http://www.python.org/")
         self.assert_('x-throttling' not in resp.info())
         resp = opener.open("http://www.python.org/")
         self.assert_('x-throttling' in resp.info())
 
     def testCombined(self):
-        opener = urllib2.build_opener(CacheHandler(".urllib2cache"), ThrottlingProcessor(10))
+        opener = build_opener(CacheHandler(".urllib2cache"), ThrottlingProcessor(10))
         resp = opener.open("http://www.python.org/")
         self.assert_('x-cache' not in resp.info())
         self.assert_('x-throttling' not in resp.info())
